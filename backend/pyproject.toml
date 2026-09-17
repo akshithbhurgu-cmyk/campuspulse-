@@ -1,0 +1,13 @@
+[project]
+name = "campuspulse-backend"
+version = "0.1.0"
+description = "CampusPulse API foundation"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+

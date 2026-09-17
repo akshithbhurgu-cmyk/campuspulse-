@@ -1,0 +1,14 @@
+.env
+backend/credentials.json
+backend/gmail_token.json
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.DS_Store
+node_modules/
+dist/
+*.tsbuildinfo

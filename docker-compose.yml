@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-campuspulse}
+      POSTGRES_USER: ${POSTGRES_USER:-campuspulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-campuspulse_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      CAMPUS_TIMEZONE: ${CAMPUS_TIMEZONE:-Asia/Kolkata}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://campuspulse:campuspulse_dev_password@db:5432/campuspulse}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e4b}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-120}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/credentials.json:/app/credentials.json:ro
+      - ./backend/gmail_token.json:/app/gmail_token.json
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

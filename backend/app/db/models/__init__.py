@@ -1,0 +1,42 @@
+from app.db.models.academic import (
+    AcademicCalendarEvent,
+    Announcement,
+    Assessment,
+    AssessmentTopic,
+    Assignment,
+    Attendance,
+    AvailabilityBlock,
+    Course,
+    CourseUnit,
+    PersonalEvent,
+    Semester,
+    Student,
+    TimetableEntry,
+    Topic,
+)
+from app.db.models.planning import ChangeHistory, Priority, Risk, StudyPlan, StudyProgress, StudySession
+from app.db.models.ingestion import IngestionItem
+
+__all__ = [
+    "AcademicCalendarEvent",
+    "Announcement",
+    "Assessment",
+    "AssessmentTopic",
+    "Assignment",
+    "Attendance",
+    "AvailabilityBlock",
+    "ChangeHistory",
+    "IngestionItem",
+    "Course",
+    "CourseUnit",
+    "PersonalEvent",
+    "Priority",
+    "Risk",
+    "Semester",
+    "Student",
+    "StudyPlan",
+    "StudyProgress",
+    "StudySession",
+    "TimetableEntry",
+    "Topic",
+]
