@@ -65,6 +65,7 @@ class OllamaExtractor:
         try:
             result = model.invoke([SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=text)])
             extraction = result if isinstance(result, AcademicExtraction) else AcademicExtraction.model_validate(result)
-            return extraction if extraction.scheduled_at else extraction.model_copy(update={"scheduled_at": explicit_date(text)})
+            parsed = explicit_date(text)
+            return extraction.model_copy(update={"scheduled_at": parsed}) if parsed else extraction
         except Exception as error:
             raise ExtractionError("The local model could not extract this notice.") from error

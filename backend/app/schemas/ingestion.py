@@ -27,4 +27,7 @@ class IngestionItemOut(BaseModel):
 class ApplyResult(BaseModel):
     item: IngestionItemOut
     announcement_id: int
+    created_record_type: str | None = None
+    created_record_id: int | None = None
+    replan_required: bool = False
     dashboard_recalculated: bool

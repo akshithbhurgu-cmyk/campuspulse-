@@ -147,3 +147,53 @@ export interface Dashboard {
   }[];
   unscheduled_minutes: Record<string, number>;
 }
+
+export interface IngestionItem {
+  id: number;
+  source: "PASTE" | "PDF" | "GMAIL";
+  filename: string | null;
+  raw_text: string;
+  normalized_text: string;
+  extraction: {
+    title?: string;
+    event_type?: string;
+    course_name?: string | null;
+    scheduled_at?: string | null;
+    topics?: string[];
+    summary?: string;
+    confidence?: number;
+    course_match?: string | null;
+    requires_review?: boolean;
+  } | null;
+  course_id: number | null;
+  course_code: string | null;
+  status: "PREVIEW" | "APPLIED" | "IGNORED" | "FAILED";
+  error: string | null;
+  created_at: string;
+  processed_at: string | null;
+}
+
+export interface IngestionApplyResult {
+  item: IngestionItem;
+  announcement_id: number;
+  created_record_type: string | null;
+  created_record_id: number | null;
+  replan_required: boolean;
+  dashboard_recalculated: boolean;
+}
+
+export interface AgentResponse {
+  answer: string;
+  tools_used: string[];
+  model: string;
+}
+export interface Change {
+  id: number;
+  title: string;
+  reason: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  changes: { field: string; before: unknown | null; after: unknown | null }[];
+  created_at: string;
+}

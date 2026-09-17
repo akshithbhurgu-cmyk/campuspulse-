@@ -3,12 +3,16 @@ import { Link, NavLink, Route, Routes, useParams } from "react-router-dom";
 import { send, useApi } from "./api";
 import type {
   Assignment,
+  AgentResponse,
   Assessment,
   AttendanceImpact,
   Calendar,
+  Change,
   Course,
   CourseDetail,
   Dashboard,
+  IngestionApplyResult,
+  IngestionItem,
   Preparation,
   Topic,
   Unit,
@@ -26,13 +30,14 @@ const stamp = (value: string | null, zone = timezone) =>
 const percent = (value: number | null) =>
   value === null ? "Not recorded" : `${value.toFixed(1)}%`;
 const pages = [
-  ["/", "Dashboard"],
-  ["/calendar", "Calendar"],
-  ["/academics", "Academics"],
-  ["/preparation", "Preparation"],
-  ["/announcements", "Announcements"],
-  ["/plan", "Plan"],
-  ["/ai", "CampusPulse AI"],
+  ["/", "◈  Dashboard"],
+  ["/calendar", "▣  Calendar"],
+  ["/academics", "▤  Academics"],
+  ["/preparation", "◒  Preparation"],
+  ["/announcements", "✦  Announcements"],
+  ["/updates", "◌  Updates"],
+  ["/plan", "⌁  Plan"],
+  ["/ai", "✧  CampusPulse AI"],
 ];
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
@@ -53,8 +58,11 @@ function DataView<T>({
   const { data, loading, error, retry } = useApi<T>(path);
   if (loading)
     return (
-      <div className="card" role="status">
-        Loading your semester…
+      <div className="card loading-card" role="status">
+        <span className="skeleton skeleton-title" />
+        <span className="skeleton" />
+        <span className="skeleton skeleton-short" />
+        <span className="sr-only">Loading your semester…</span>
       </div>
     );
   if (error)
@@ -237,7 +245,36 @@ function AcademicWork() {
     </div>
   );
 }
-function PlanContent({ data }: { data: Dashboard }) {
+function PlanContent({
+  data,
+  refresh,
+}: {
+  data: Dashboard;
+  refresh?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  async function save() {
+    setBusy(true);
+    try {
+      await send("/plans/today/save", "POST", null);
+      setMessage("Plan saved.");
+      refresh?.();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not save plan.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function toggle(id: number, locked: boolean) {
+    setBusy(true);
+    try {
+      await send(`/study-sessions/${id}/lock?locked=${!locked}`, "POST", null);
+      refresh?.();
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <>
       <p className="notice">
@@ -259,9 +296,24 @@ function PlanContent({ data }: { data: Dashboard }) {
               {session.is_locked ? "Locked · " : ""}
               {session.status}
             </span>
+            {session.id && data.plan_source === "saved" && (
+              <button
+                className="small-button"
+                disabled={busy}
+                onClick={() => toggle(session.id!, session.is_locked)}
+              >
+                {session.is_locked ? "Unlock" : "Lock"}
+              </button>
+            )}
           </li>
         ))}
       </ul>
+      {data.plan_source === "preview" && data.today_plan.length > 0 && (
+        <button disabled={busy} onClick={save}>
+          {busy ? "Saving…" : "Save today’s plan"}
+        </button>
+      )}
+      {message && <p className="success">{message}</p>}
       {!data.today_plan.length && (
         <p>
           No study sessions for today. Previews require declared free
@@ -276,10 +328,195 @@ function PlanContent({ data }: { data: Dashboard }) {
     </>
   );
 }
+function ReplanPanel({ refresh }: { refresh: () => void }) {
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [preview, setPreview] = useState<{
+    kept_session_ids: number[];
+    rescheduled: { session_id: number; starts_at: string; ends_at: string }[];
+    locked_conflict_ids: number[];
+    unresolved_session_ids: number[];
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  async function previewReplan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await send<typeof preview>(
+        `/plans/replan/preview?starts_at=${encodeURIComponent(new Date(startsAt).toISOString())}&ends_at=${encodeURIComponent(new Date(endsAt).toISOString())}`,
+        "POST",
+        null,
+      );
+      setPreview(result);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not create a replan preview.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function confirm() {
+    if (!preview) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await send<{ moved_sessions: number }>(
+        "/plans/replan/confirm",
+        "POST",
+        preview.rescheduled,
+      );
+      setMessage(
+        `Replan confirmed. ${result.moved_sessions} session${result.moved_sessions === 1 ? "" : "s"} moved.`,
+      );
+      setPreview(null);
+      refresh();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not confirm replan.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Card title="Replan saved sessions">
+      <p className="muted">
+        Enter a new unavoidable time block. CampusPulse previews changes first;
+        locked sessions are never moved.
+      </p>
+      <form className="form-grid" onSubmit={previewReplan}>
+        <label>
+          Starts
+          <input
+            required
+            type="datetime-local"
+            value={startsAt}
+            onChange={(e) => setStartsAt(e.target.value)}
+          />
+        </label>
+        <label>
+          Ends
+          <input
+            required
+            type="datetime-local"
+            value={endsAt}
+            onChange={(e) => setEndsAt(e.target.value)}
+          />
+        </label>
+        <button disabled={busy}>
+          {busy ? "Calculating…" : "Preview replan"}
+        </button>
+      </form>
+      {preview && (
+        <div className="replan-preview">
+          <p>
+            <strong>{preview.kept_session_ids.length}</strong> session(s)
+            unchanged · <strong>{preview.rescheduled.length}</strong> proposed
+            move(s)
+          </p>
+          {!!preview.locked_conflict_ids.length && (
+            <p className="form-error">
+              Locked conflicts: sessions{" "}
+              {preview.locked_conflict_ids.join(", ")}. They were kept
+              unchanged.
+            </p>
+          )}
+          {!!preview.unresolved_session_ids.length && (
+            <p className="form-error">
+              Could not fit sessions:{" "}
+              {preview.unresolved_session_ids.join(", ")}.
+            </p>
+          )}
+          <ul className="rows">
+            {preview.rescheduled.map((item) => (
+              <li key={item.session_id}>
+                <span>Session #{item.session_id}</span>
+                <span>
+                  {stamp(item.starts_at)} → {stamp(item.ends_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="review-actions">
+            <button
+              disabled={busy || !!preview.locked_conflict_ids.length}
+              onClick={confirm}
+            >
+              Confirm replan
+            </button>
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => setPreview(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {message && (
+        <p className={message.startsWith("Replan") ? "success" : "form-error"}>
+          {message}
+        </p>
+      )}
+    </Card>
+  );
+}
+function UpdatesPage() {
+  return (
+    <DataView<Change[]> path="/changes">
+      {(changes) => (
+        <Card title="Updates and notifications">
+          <p className="muted">
+            A transparent timeline explaining every academic update and plan
+            change.
+          </p>
+          {!changes.length && <p>No updates yet.</p>}
+          <div className="change-timeline">
+            {changes.map((change) => (
+              <article key={change.id} className="change-item">
+                <div className="change-dot" />
+                <div>
+                  <div className="change-title">
+                    <h3>{change.title}</h3>
+                    <small>{stamp(change.created_at)}</small>
+                  </div>
+                  <p>{change.reason}</p>
+                  {!!change.changes.length && (
+                    <details>
+                      <summary>What changed?</summary>
+                      <ul className="change-fields">
+                        {change.changes.map((item, index) => (
+                          <li key={index}>
+                            <strong>{item.field}</strong>
+                            <span>
+                              {String(item.before ?? "Not set")} →{" "}
+                              {String(item.after ?? "Not set")}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  <small>{change.action.replaceAll("_", " ")}</small>
+                </div>
+              </article>
+            ))}
+          </div>
+        </Card>
+      )}
+    </DataView>
+  );
+}
 function DashboardPage() {
   return (
     <DataView<Dashboard> path="/dashboard">
-      {(data) => (
+      {(data, refresh) => (
         <>
           <p className="muted">
             Snapshot {stamp(data.generated_at, data.timezone)} · {data.timezone}
@@ -302,7 +539,7 @@ function DashboardPage() {
               )}
             </Card>
             <Card title="Today’s study plan">
-              <PlanContent data={data} />
+              <PlanContent data={data} refresh={refresh} />
             </Card>
             <Card title="Top priorities">
               <ul className="rows">
@@ -661,6 +898,352 @@ function CalendarForms({ onSaved }: { onSaved: () => void }) {
     </div>
   );
 }
+
+function ReviewItem({
+  item,
+  onChanged,
+}: {
+  item: IngestionItem;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState<"apply" | "ignore" | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const extraction = item.extraction;
+
+  async function act(action: "apply" | "ignore") {
+    setBusy(action);
+    setMessage(null);
+    try {
+      if (action === "apply") {
+        const result = await send<IngestionApplyResult>(
+          `/ingestion/${item.id}/apply`,
+          "POST",
+          null,
+        );
+        setMessage(
+          result.created_record_type
+            ? `Applied. Created ${result.created_record_type.replaceAll("_", " ").toLowerCase()}.${result.replan_required ? " Your dashboard priorities have been recalculated; a replan preview is required before any saved study session can move." : ""}`
+            : "Applied as an announcement. The original email remains available in Gmail.",
+        );
+      } else {
+        await send<IngestionItem>(`/ingestion/${item.id}/ignore`, "POST", null);
+        setMessage("Ignored. No academic record was created.");
+      }
+      onChanged();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not update this preview.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <article className="review-item">
+      <div className="review-heading">
+        <div>
+          <p className="eyebrow">{item.source} · REVIEW REQUIRED</p>
+          <h3>{extraction?.title || "Untitled item"}</h3>
+        </div>
+        <span className="badge">
+          {extraction?.event_type || "UNCLASSIFIED"}
+        </span>
+      </div>
+      <dl className="review-details">
+        <div>
+          <dt>Course</dt>
+          <dd>
+            {item.course_code ||
+              extraction?.course_name ||
+              "Not confidently matched"}
+          </dd>
+        </div>
+        <div>
+          <dt>Scheduled</dt>
+          <dd>{stamp(extraction?.scheduled_at || null)}</dd>
+        </div>
+        <div>
+          <dt>Confidence</dt>
+          <dd>
+            {typeof extraction?.confidence === "number"
+              ? `${Math.round(extraction.confidence * 100)}%`
+              : "Not available"}
+          </dd>
+        </div>
+      </dl>
+      {extraction?.summary && <p>{extraction.summary}</p>}
+      {!!extraction?.topics?.length && (
+        <p className="muted">Topics: {extraction.topics.join(", ")}</p>
+      )}
+      <details>
+        <summary>View original imported text</summary>
+        <pre>{item.normalized_text}</pre>
+      </details>
+      <div className="review-actions">
+        <button
+          type="button"
+          onClick={() => act("apply")}
+          disabled={busy !== null}
+        >
+          {busy === "apply" ? "Applying…" : "Apply"}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => act("ignore")}
+          disabled={busy !== null}
+        >
+          {busy === "ignore" ? "Ignoring…" : "Ignore"}
+        </button>
+      </div>
+      {message && (
+        <p className={message.startsWith("Could") ? "form-error" : "success"}>
+          {message}
+        </p>
+      )}
+    </article>
+  );
+}
+
+function ReviewInboxPage() {
+  const { data, loading, error, retry } = useApi<IngestionItem[]>(
+    "/ingestion?status=PREVIEW",
+  );
+  const [gmailQuery, setGmailQuery] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+
+  async function importGmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setImporting(true);
+    setImportMessage(null);
+    try {
+      const path = `/ingestion/gmail/import?max_results=10&query=${encodeURIComponent(gmailQuery)}`;
+      const imported = await send<IngestionItem[]>(path, "POST", null);
+      setImportMessage(
+        `${imported.length} Gmail message${imported.length === 1 ? "" : "s"} checked. New items are review-only.`,
+      );
+      retry();
+    } catch (error) {
+      setImportMessage(
+        error instanceof Error
+          ? error.message
+          : "Gmail import could not start.",
+      );
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <Card title="Import from Gmail">
+        <p className="muted">
+          CampusPulse reads only the search results you request. Imported
+          messages are previews; they never update your semester until you press
+          Apply.
+        </p>
+        <form className="inline-form" onSubmit={importGmail}>
+          <label>
+            Gmail search (optional)
+            <input
+              value={gmailQuery}
+              onChange={(event) => setGmailQuery(event.target.value)}
+              placeholder="e.g. from:faculty@college.edu newer_than:30d"
+            />
+          </label>
+          <button disabled={importing}>
+            {importing ? "Reading Gmail…" : "Check Gmail"}
+          </button>
+        </form>
+        {importMessage && (
+          <p
+            className={
+              importMessage.includes("could") ? "form-error" : "success"
+            }
+          >
+            {importMessage}
+          </p>
+        )}
+      </Card>
+      <section className="section-heading">
+        <h2>Items awaiting your decision</h2>
+        <p className="muted">
+          Review the extraction against the original text. Apply currently
+          records a reviewed announcement; Ignore creates no academic record.
+        </p>
+      </section>
+      {loading && (
+        <div className="card" role="status">
+          Loading review items…
+        </div>
+      )}
+      {error && (
+        <div className="card" role="alert">
+          <p>{error}</p>
+          <button onClick={retry}>Try again</button>
+        </div>
+      )}
+      {data?.map((item) => (
+        <ReviewItem key={item.id} item={item} onChanged={retry} />
+      ))}
+      {data && !data.length && (
+        <Card title="Inbox clear">
+          <p>No imported items need review right now.</p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+type ChatMessage = {
+  id: number;
+  role: "user" | "assistant";
+  text: string;
+  tools?: string[];
+  model?: string;
+};
+
+const starterQuestions = [
+  "What should I study tonight?",
+  "Can I skip my next FOS class?",
+  "How prepared am I for Deep Learning?",
+  "What are my biggest academic risks?",
+];
+
+function AiChatPage() {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 0,
+      role: "assistant",
+      text: "Ask me about your attendance, assessments, preparation, risks, priorities, or study schedule. I use your CampusPulse data and deterministic backend tools to answer.",
+    },
+  ]);
+  const [question, setQuestion] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function ask(rawQuestion?: string) {
+    const text = (rawQuestion ?? question).trim();
+    if (!text || busy) return;
+    const requestId = Date.now();
+    setMessages((current) => [
+      ...current,
+      { id: requestId, role: "user", text },
+    ]);
+    setQuestion("");
+    setBusy(true);
+    try {
+      const result = await send<AgentResponse>("/agent/query", "POST", {
+        question: text,
+      });
+      setMessages((current) => [
+        ...current,
+        {
+          id: requestId + 1,
+          role: "assistant",
+          text: result.answer,
+          tools: result.tools_used,
+          model: result.model,
+        },
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: requestId + 1,
+          role: "assistant",
+          text:
+            error instanceof Error
+              ? `I could not answer that: ${error.message}`
+              : "I could not answer that right now.",
+        },
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void ask();
+  }
+
+  return (
+    <div className="chat-layout">
+      <Card title="CampusPulse AI">
+        <p className="notice">
+          The AI explains real CampusPulse data. Attendance, risks, priorities,
+          and plans are calculated by backend engines—not invented by the model.
+        </p>
+        <div className="chat-messages" aria-live="polite">
+          {messages.map((message) => (
+            <article
+              key={message.id}
+              className={`chat-message ${message.role}`}
+            >
+              <strong>{message.role === "user" ? "You" : "CampusPulse"}</strong>
+              <p>{message.text}</p>
+              {message.role === "assistant" && message.tools && (
+                <small>
+                  Tools used:{" "}
+                  {message.tools.length
+                    ? message.tools.join(", ")
+                    : "No backend tool was needed"}
+                  {message.model ? ` · ${message.model}` : ""}
+                </small>
+              )}
+            </article>
+          ))}
+          {busy && (
+            <article className="chat-message assistant">
+              <strong>CampusPulse</strong>
+              <p>Checking your academic context…</p>
+            </article>
+          )}
+        </div>
+        <form className="chat-form" onSubmit={submit}>
+          <label htmlFor="agent-question" className="sr-only">
+            Ask CampusPulse AI
+          </label>
+          <textarea
+            id="agent-question"
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            maxLength={2000}
+            rows={3}
+            placeholder="Ask about your semester…"
+            disabled={busy}
+          />
+          <button disabled={busy || !question.trim()}>
+            {busy ? "Thinking…" : "Ask CampusPulse"}
+          </button>
+        </form>
+      </Card>
+      <Card title="Try a question">
+        <div className="suggestions">
+          {starterQuestions.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className="secondary-button"
+              onClick={() => void ask(item)}
+              disabled={busy}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+        <p className="muted">
+          This chat is read-only. It cannot apply inbox items, modify
+          attendance, or create a plan without a separate confirmed action.
+        </p>
+      </Card>
+    </div>
+  );
+}
 function Placeholder({
   title,
   description,
@@ -693,7 +1276,7 @@ export default function App() {
           ))}
         </nav>
         <p className="sidebar-note">
-          Phase 8 · Academic workspace
+          <span className="live-dot" /> Local workspace
           <br />
           Synthetic student #1
           <br />
@@ -703,7 +1286,12 @@ export default function App() {
       <main>
         <header>
           <p className="eyebrow">SEMESTER 5 / WORKSPACE</p>
-          <h1>Your academic pulse</h1>
+          <div className="header-line">
+            <h1>Your academic pulse</h1>
+            <span className="status-chip">
+              <span className="live-dot" /> Systems ready
+            </span>
+          </div>
           <p className="muted">
             Your CampusPulse academic workspace. One clear view of what’s next.
           </p>
@@ -719,32 +1307,22 @@ export default function App() {
             path="/plan"
             element={
               <DataView<Dashboard> path="/dashboard">
-                {(data) => (
-                  <Card title="Today’s plan">
-                    <PlanContent data={data} />
-                  </Card>
+                {(data, refresh) => (
+                  <div className="stack">
+                    <Card title="Today’s plan">
+                      <PlanContent data={data} refresh={refresh} />
+                    </Card>
+                    {data.plan_source === "saved" && (
+                      <ReplanPanel refresh={refresh} />
+                    )}
+                  </div>
                 )}
               </DataView>
             }
           />
-          <Route
-            path="/announcements"
-            element={
-              <Placeholder
-                title="Announcements"
-                description="Announcement ingestion and its API/UI workflow will be connected in later phases."
-              />
-            }
-          />
-          <Route
-            path="/ai"
-            element={
-              <Placeholder
-                title="CampusPulse AI"
-                description="Agent tools, LangGraph, and LLM integration are intentionally not enabled yet."
-              />
-            }
-          />
+          <Route path="/announcements" element={<ReviewInboxPage />} />
+          <Route path="/updates" element={<UpdatesPage />} />
+          <Route path="/ai" element={<AiChatPage />} />
           <Route
             path="*"
             element={

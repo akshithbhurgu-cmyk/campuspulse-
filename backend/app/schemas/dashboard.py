@@ -60,6 +60,23 @@ class RecentChangeOut(BaseModel):
     created_at: datetime
 
 
+class ChangeFieldOut(BaseModel):
+    field: str
+    before: Any | None = None
+    after: Any | None = None
+
+
+class ChangeOut(BaseModel):
+    id: int
+    title: str
+    reason: str
+    entity_type: str
+    entity_id: str
+    action: str
+    changes: list[ChangeFieldOut]
+    created_at: datetime
+
+
 class DashboardOut(BaseModel):
     student_id: int
     generated_at: datetime
@@ -71,4 +88,3 @@ class DashboardOut(BaseModel):
     risks: list[DashboardRiskOut]
     recent_changes: list[RecentChangeOut]
     unscheduled_minutes: dict[str, int]
-

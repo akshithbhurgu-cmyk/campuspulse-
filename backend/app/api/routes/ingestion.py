@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -18,6 +19,17 @@ router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 def present(db: Session, item: IngestionItem) -> dict:
     course = db.get(Course, item.course_id) if item.course_id else None
     return {**{field: getattr(item, field) for field in IngestionItemOut.model_fields if field != "course_code"}, "course_code": course.code if course else None}
+
+
+@router.get("", response_model=list[IngestionItemOut])
+def list_items(
+    db: Annotated[Session, Depends(get_db)], student_id: Annotated[int, Query(ge=1)] = 1,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+):
+    statement = select(IngestionItem).where(IngestionItem.student_id == student_id).order_by(IngestionItem.created_at.desc(), IngestionItem.id.desc())
+    if status_filter is not None:
+        statement = statement.where(IngestionItem.status == status_filter.upper())
+    return [present(db, item) for item in db.scalars(statement)]
 
 
 @router.post("/text", response_model=IngestionItemOut, status_code=status.HTTP_201_CREATED)
@@ -68,7 +80,7 @@ def import_gmail(
     settings = get_settings()
     extractor = OllamaExtractor(base_url=settings.ollama_base_url, model=settings.ollama_model, timeout_seconds=settings.ollama_timeout_seconds)
     try:
-        return [present(db, ingestion_service.preview_text(db, student_id, message["text"], extractor, source="GMAIL")) for message in recent_messages(query, max_results)]
+        return [present(db, ingestion_service.preview_text(db, student_id, message["text"], extractor, source="GMAIL", external_id=message["id"])) for message in recent_messages(query, max_results)]
     except RuntimeError as error:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
     except ExtractionError as error:
@@ -96,8 +108,8 @@ def ignore(item_id: int, db: Annotated[Session, Depends(get_db)], student_id: An
 @router.post("/{item_id}/apply", response_model=ApplyResult)
 def apply(item_id: int, db: Annotated[Session, Depends(get_db)], student_id: Annotated[int, Query(ge=1)] = 1):
     try:
-        item, announcement = ingestion_service.apply(db, student_id, item_id)
-        return {"item": present(db, item), "announcement_id": announcement.id, "dashboard_recalculated": True}
+        item, announcement, record_type, record_id = ingestion_service.apply(db, student_id, item_id)
+        return {"item": present(db, item), "announcement_id": announcement.id, "created_record_type": record_type, "created_record_id": record_id, "replan_required": record_type in {"ASSESSMENT", "ASSIGNMENT", "ACADEMIC_CALENDAR_EVENT"}, "dashboard_recalculated": True}
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
     except ValueError as error:
