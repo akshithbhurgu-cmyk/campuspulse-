@@ -138,10 +138,15 @@ class DashboardService:
                 "factors": asdict(factors),
             })
             for risk_type, score in asdict(scores).items():
-                if risk_type in {"overall", "attendance"} or score < 45:
+                if risk_type == "attendance" or score < 45:
                     continue
+                summary = (
+                    f'{item["title"]}: overall academic risk {score}%.'
+                    if risk_type == "overall"
+                    else f'{item["title"]}: {risk_type} risk {score}%.'
+                )
                 risks.append(self._risk(
-                    risk_type.upper(), score, f'{item["title"]}: {risk_type} risk {score}%.',
+                    risk_type.upper(), score, summary,
                     course_id, key,
                 ))
             if required > 0 and (deadline is None or deadline > now):
@@ -199,7 +204,7 @@ class DashboardService:
             "today_plan": sorted(today_plan, key=lambda item: item["starts_at"]),
             "plan_source": plan_source,
             "top_priorities": sorted(priorities, key=lambda item: (-item["score"], item["task_key"]))[:5],
-            "risks": sorted(risks, key=lambda item: (-item["score"], item["summary"]))[:10],
+            "risks": sorted(risks, key=lambda item: (-item["score"], item["summary"]))[:15],
             "recent_changes": [{
                 "id": item.id, "entity_type": item.entity_type, "entity_id": item.entity_id,
                 "action": item.action, "before_state": item.before_state,

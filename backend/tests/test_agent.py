@@ -44,6 +44,17 @@ class LoopingToolCallingModel(ToolCallingModel):
         )
 
 
+class EmptyFinalModel(ToolCallingModel):
+    def invoke(self, messages):
+        self.calls += 1
+        if self.calls == 1:
+            return AIMessage(
+                content="",
+                tool_calls=[{"name": "get_dashboard", "args": {}, "id": "dashboard-1"}],
+            )
+        return AIMessage(content="")
+
+
 class UnavailableModel(ToolCallingModel):
     def invoke(self, messages):
         raise ConnectionError("Ollama is offline")
@@ -86,6 +97,13 @@ class AgentTests(unittest.TestCase):
     def test_repeated_tool_calls_stop_with_a_controlled_error(self):
         with self.assertRaises(AgentExecutionError):
             self.agent().ask("Keep checking attendance forever")
+
+    @patch("app.agent.orchestrator.ChatOllama", EmptyFinalModel)
+    def test_empty_final_model_response_uses_a_tool_grounded_fallback(self):
+        result = self.agent().ask("What are my biggest academic risks?")
+        self.assertIn("highest current risks", result["answer"])
+        self.assertTrue(result["answer"].strip())
+        self.assertEqual(result["tools_used"], ["get_dashboard"])
 
     @patch("app.agent.orchestrator.ChatOllama", UnavailableModel)
     def test_unreachable_model_becomes_a_controlled_error(self):

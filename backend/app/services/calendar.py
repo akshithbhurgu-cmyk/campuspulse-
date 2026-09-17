@@ -33,6 +33,11 @@ class CalendarService:
             .options(selectinload(TimetableEntry.course))
             .order_by(TimetableEntry.day_of_week, TimetableEntry.start_time)
         ).all()
+        availability_blocks = session.scalars(
+            select(AvailabilityBlock)
+            .where(AvailabilityBlock.student_id == student_id)
+            .order_by(AvailabilityBlock.block_date, AvailabilityBlock.start_time)
+        ).all()
 
         return {
             "academic_events": [
@@ -72,6 +77,20 @@ class CalendarService:
                 }
                 for entry in timetable_entries
             ],
+            "availability_blocks": [
+                {
+                    "id": block.id,
+                    "student_id": block.student_id,
+                    "block_type": block.block_type.value,
+                    "block_date": block.block_date,
+                    "day_of_week": block.day_of_week,
+                    "start_time": block.start_time,
+                    "end_time": block.end_time,
+                    "is_recurring": block.is_recurring,
+                    "label": block.label,
+                }
+                for block in availability_blocks
+            ],
         }
 
     def create_personal_event(
@@ -109,4 +128,3 @@ class CalendarService:
 
 
 calendar_service = CalendarService()
-

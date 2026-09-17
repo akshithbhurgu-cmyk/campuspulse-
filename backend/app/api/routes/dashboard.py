@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.config import get_settings
-from app.schemas.dashboard import ChangeOut, DashboardOut
+from app.schemas.dashboard import ChangeOut, DashboardOut, StudySessionUpdate
 from app.services.common import StudentNotFoundError
 from app.services.dashboard import dashboard_service
 from app.services.plans import plan_service
@@ -46,6 +46,23 @@ def save_today_plan(db: Annotated[Session, Depends(get_db)], student_id: Annotat
 def lock_session(session_id: int, locked: bool, db: Annotated[Session, Depends(get_db)], student_id: Annotated[int, Query(ge=1)] = 1) -> dict:
     try: return plan_service.set_lock(db, student_id, session_id, locked)
     except LookupError as error: raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.patch("/study-sessions/{session_id}")
+def update_session(
+    session_id: int, payload: StudySessionUpdate,
+    db: Annotated[Session, Depends(get_db)], student_id: Annotated[int, Query(ge=1)] = 1,
+) -> dict:
+    try:
+        return plan_service.update_session(
+            db, student_id, session_id, title=payload.title,
+            starts_at=payload.starts_at, ends_at=payload.ends_at,
+            timezone=get_settings().campus_timezone,
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 @router.post("/plans/replan/preview")
 def replan_preview(starts_at: datetime, ends_at: datetime, db: Annotated[Session, Depends(get_db)], student_id: Annotated[int, Query(ge=1)] = 1) -> dict:

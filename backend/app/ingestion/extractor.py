@@ -51,6 +51,14 @@ def explicit_date(text: str) -> datetime | None:
         return None
 
 
+def explicit_event_type(text: str) -> str | None:
+    """Preserve unambiguous calendar semantics when a local model is over-cautious."""
+    normalized = re.sub(r"\s+", " ", text.casefold())
+    if "holiday" in normalized or "college will remain closed" in normalized:
+        return "HOLIDAY"
+    return None
+
+
 class OllamaExtractor:
     def __init__(self, *, base_url: str, model: str, timeout_seconds: int):
         self.base_url = base_url
@@ -66,6 +74,11 @@ class OllamaExtractor:
             result = model.invoke([SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=text)])
             extraction = result if isinstance(result, AcademicExtraction) else AcademicExtraction.model_validate(result)
             parsed = explicit_date(text)
-            return extraction.model_copy(update={"scheduled_at": parsed}) if parsed else extraction
+            updates: dict[str, object] = {}
+            if parsed:
+                updates["scheduled_at"] = parsed
+            if event_type := explicit_event_type(text):
+                updates["event_type"] = event_type
+            return extraction.model_copy(update=updates) if updates else extraction
         except Exception as error:
             raise ExtractionError("The local model could not extract this notice.") from error

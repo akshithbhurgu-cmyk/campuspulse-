@@ -77,6 +77,12 @@ class ChangeOut(BaseModel):
     created_at: datetime
 
 
+class StudySessionUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+    starts_at: datetime
+    ends_at: datetime
+
+
 class DashboardOut(BaseModel):
     student_id: int
     generated_at: datetime

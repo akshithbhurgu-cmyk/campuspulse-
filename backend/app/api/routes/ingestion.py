@@ -75,7 +75,7 @@ def preview_pdf(
 @router.post("/gmail/import", response_model=list[IngestionItemOut])
 def import_gmail(
     db: Annotated[Session, Depends(get_db)], student_id: Annotated[int, Query(ge=1)] = 1,
-    query: str = "", max_results: Annotated[int, Query(ge=1, le=20)] = 10,
+    query: str = "", max_results: Annotated[int, Query(ge=1, le=50)] = 10,
 ):
     settings = get_settings()
     extractor = OllamaExtractor(base_url=settings.ollama_base_url, model=settings.ollama_model, timeout_seconds=settings.ollama_timeout_seconds)

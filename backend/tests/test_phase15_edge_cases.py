@@ -18,6 +18,7 @@ from app.ingestion.extractor import ExtractionError, OllamaExtractor
 from app.ingestion.pdf import PdfExtractionError, extract_pdf_text
 from app.seed import seed_synthetic_semester
 from app.services.replanning import replanning_service
+from app.services.plans import plan_service
 
 
 class Phase15EdgeCaseTests(unittest.TestCase):
@@ -61,3 +62,23 @@ class Phase15EdgeCaseTests(unittest.TestCase):
         result = replanning_service.preview(self.db, 1, datetime(2026, 9, 16, 9, tzinfo=UTC), datetime(2026, 9, 16, 10, tzinfo=UTC), timezone="Asia/Kolkata")
         self.assertEqual(self.db.query(StudySession).count(), before)
         self.assertIn("rescheduled", result)
+
+    def test_saved_session_can_be_edited_without_overlapping_another_session(self):
+        plan = StudyPlan(student_id=1, plan_date=date(2026, 9, 16), status=StudyPlanStatus.ACTIVE)
+        plan.sessions.extend([
+            StudySession(title="First", starts_at=datetime(2026, 9, 16, 10, tzinfo=UTC), ends_at=datetime(2026, 9, 16, 11, tzinfo=UTC)),
+            StudySession(title="Second", starts_at=datetime(2026, 9, 16, 12, tzinfo=UTC), ends_at=datetime(2026, 9, 16, 13, tzinfo=UTC)),
+        ])
+        self.db.add(plan); self.db.commit()
+        updated = plan_service.update_session(
+            self.db, 1, plan.sessions[0].id, title="Edited task",
+            starts_at=datetime(2026, 9, 16, 10, 30, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 16, 11, 30, tzinfo=UTC), timezone="Asia/Kolkata",
+        )
+        self.assertEqual(updated["title"], "Edited task")
+        with self.assertRaisesRegex(ValueError, "overlaps"):
+            plan_service.update_session(
+                self.db, 1, plan.sessions[0].id, title="Overlap",
+                starts_at=datetime(2026, 9, 16, 12, 30, tzinfo=UTC),
+                ends_at=datetime(2026, 9, 16, 13, 30, tzinfo=UTC), timezone="Asia/Kolkata",
+            )

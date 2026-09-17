@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 import { Link, NavLink, Route, Routes, useParams } from "react-router-dom";
 import { send, useApi } from "./api";
 import type {
@@ -27,6 +27,11 @@ const stamp = (value: string | null, zone = timezone) =>
         timeZone: zone,
       }).format(new Date(value))
     : "Not scheduled";
+const localDateTimeValue = (value: string) => {
+  const date = new Date(value);
+  const part = (number: number) => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}T${part(date.getHours())}:${part(date.getMinutes())}`;
+};
 const percent = (value: number | null) =>
   value === null ? "Not recorded" : `${value.toFixed(1)}%`;
 const pages = [
@@ -51,11 +56,13 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 function DataView<T>({
   path,
   children,
+  refreshOnMutation = false,
 }: {
   path: string;
   children: (data: T, refresh: () => void) => ReactNode;
+  refreshOnMutation?: boolean;
 }) {
-  const { data, loading, error, retry } = useApi<T>(path);
+  const { data, loading, error, retry } = useApi<T>(path, refreshOnMutation);
   if (loading)
     return (
       <div className="card loading-card" role="status">
@@ -254,6 +261,10 @@ function PlanContent({
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editStartsAt, setEditStartsAt] = useState("");
+  const [editEndsAt, setEditEndsAt] = useState("");
   async function save() {
     setBusy(true);
     try {
@@ -275,6 +286,34 @@ function PlanContent({
       setBusy(false);
     }
   }
+  function beginEdit(session: Dashboard["today_plan"][number]) {
+    if (!session.id) return;
+    setEditingId(session.id);
+    setEditTitle(session.title);
+    setEditStartsAt(localDateTimeValue(session.starts_at));
+    setEditEndsAt(localDateTimeValue(session.ends_at));
+    setMessage(null);
+  }
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingId) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await send(`/study-sessions/${editingId}`, "PATCH", {
+        title: editTitle,
+        starts_at: new Date(editStartsAt).toISOString(),
+        ends_at: new Date(editEndsAt).toISOString(),
+      });
+      setEditingId(null);
+      setMessage("Study session updated.");
+      refresh?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update this session.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <>
       <p className="notice">
@@ -282,28 +321,60 @@ function PlanContent({
           ? "Planning preview — not saved. No database changes are made by this screen."
           : "Saved plan — displayed without modifying sessions."}
       </p>
-      <ul className="rows">
+      <ul className="plan-sessions">
         {data.today_plan.map((session, index) => (
-          <li key={session.id ?? `${session.starts_at}-${index}`}>
-            <div>
-              <strong>{session.title}</strong>
-              <small>
-                {stamp(session.starts_at, data.timezone)} →{" "}
-                {stamp(session.ends_at, data.timezone)}
+          <li className="plan-session" key={session.id ?? `${session.starts_at}-${index}`}>
+            <div className="plan-session-main">
+              <small className="plan-session-time">
+                {stamp(session.starts_at, data.timezone)} → {stamp(session.ends_at, data.timezone)}
               </small>
+              <strong>{session.title}</strong>
             </div>
-            <span className="badge">
-              {session.is_locked ? "Locked · " : ""}
-              {session.status}
-            </span>
-            {session.id && data.plan_source === "saved" && (
-              <button
-                className="small-button"
-                disabled={busy}
-                onClick={() => toggle(session.id!, session.is_locked)}
-              >
-                {session.is_locked ? "Unlock" : "Lock"}
-              </button>
+            <div className="plan-session-actions">
+              <span className="badge">
+                {session.is_locked ? "Locked · " : ""}
+                {session.status}
+              </span>
+              {session.id && data.plan_source === "saved" && (
+                <>
+                  <button
+                    className="small-button"
+                    disabled={busy}
+                    onClick={() => toggle(session.id!, session.is_locked)}
+                  >
+                    {session.is_locked ? "Unlock" : "Lock"}
+                  </button>
+                  <button
+                    className="small-button secondary-button"
+                    disabled={busy}
+                    onClick={() => beginEdit(session)}
+                  >
+                    Edit
+                  </button>
+                </>
+              )}
+            </div>
+            {editingId === session.id && (
+              <div className="plan-editor">
+                <form className="plan-editor-form" onSubmit={saveEdit}>
+                  <label className="plan-editor-task">
+                    Task
+                    <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} required maxLength={180} />
+                  </label>
+                  <label>
+                    Starts
+                    <input value={editStartsAt} onChange={(event) => setEditStartsAt(event.target.value)} required type="datetime-local" />
+                  </label>
+                  <label>
+                    Ends
+                    <input value={editEndsAt} onChange={(event) => setEditEndsAt(event.target.value)} required type="datetime-local" />
+                  </label>
+                  <div className="plan-editor-actions">
+                    <button disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
+                    <button type="button" className="secondary-button" disabled={busy} onClick={() => setEditingId(null)}>Cancel</button>
+                  </div>
+                </form>
+              </div>
             )}
           </li>
         ))}
@@ -487,23 +558,6 @@ function UpdatesPage() {
                     <small>{stamp(change.created_at)}</small>
                   </div>
                   <p>{change.reason}</p>
-                  {!!change.changes.length && (
-                    <details>
-                      <summary>What changed?</summary>
-                      <ul className="change-fields">
-                        {change.changes.map((item, index) => (
-                          <li key={index}>
-                            <strong>{item.field}</strong>
-                            <span>
-                              {String(item.before ?? "Not set")} →{" "}
-                              {String(item.after ?? "Not set")}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-                  <small>{change.action.replaceAll("_", " ")}</small>
                 </div>
               </article>
             ))}
@@ -515,7 +569,7 @@ function UpdatesPage() {
 }
 function DashboardPage() {
   return (
-    <DataView<Dashboard> path="/dashboard">
+    <DataView<Dashboard> path="/dashboard" refreshOnMutation>
       {(data, refresh) => (
         <>
           <p className="muted">
@@ -542,10 +596,10 @@ function DashboardPage() {
               <PlanContent data={data} refresh={refresh} />
             </Card>
             <Card title="Top priorities">
-              <ul className="rows">
+              <ul className="priority-list">
                 {data.top_priorities.map((item) => (
-                  <li key={item.task_key}>
-                    <div>
+                  <li className="priority-item" key={item.task_key}>
+                    <div className="priority-item-main">
                       <strong>{item.title}</strong>
                       <small>
                         {stamp(item.deadline_at, data.timezone)} ·{" "}
@@ -555,6 +609,11 @@ function DashboardPage() {
                         {item.estimate_source} · Preparation{" "}
                         {percent(item.preparation_percentage)}
                       </small>
+                      <div className="factor-strip">
+                        <span>Prep gap {item.factors.preparation_gap.toFixed(0)}</span>
+                        <span>Deadline {item.factors.deadline_urgency.toFixed(0)}</span>
+                        <span>Workload {item.factors.workload_risk.toFixed(0)}</span>
+                      </div>
                     </div>
                     <span className="badge">
                       {item.level} · {item.score.toFixed(0)}
@@ -570,9 +629,9 @@ function DashboardPage() {
               <p className="muted">
                 Heuristic urgency scores, not probabilities.
               </p>
-              <ul className="rows">
+              <ul className="risk-list">
                 {data.risks.map((risk, index) => (
-                  <li key={`${risk.risk_type}-${index}`}>
+                  <li className="risk-item" key={`${risk.risk_type}-${index}`}>
                     <span>{risk.summary}</span>
                     <span className="badge">
                       {risk.severity} · {risk.score.toFixed(0)}
@@ -706,35 +765,36 @@ function CalendarPage() {
   ];
   return (
     <DataView<Calendar> path="/calendar">
-      {(data, refresh) => (
-        <div className="stack">
+      {(data, refresh) => {
+        const todayName = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: timezone }).format(new Date());
+        const todayIndex = days.indexOf(todayName);
+        const todayLabel = new Intl.DateTimeFormat("en-IN", { dateStyle: "full", timeZone: timezone }).format(new Date());
+        const todayEntries = [...data.timetable_entries]
+          .filter((entry) => entry.day_of_week === todayIndex)
+          .sort((a, b) => a.start_time.localeCompare(b.start_time));
+        return (
+          <div className="stack">
           <CalendarForms onSaved={refresh} />
-          <Card title="Weekly timetable">
+          <Card title={`Today's timetable · ${todayLabel}`}>
             <p className="muted">
-              Recurring class times are campus-local ({timezone}).
+              Live view for the current campus day ({timezone}).
             </p>
             <ul className="rows">
-              {[...data.timetable_entries]
-                .sort(
-                  (a, b) =>
-                    a.day_of_week - b.day_of_week ||
-                    a.start_time.localeCompare(b.start_time),
-                )
-                .map((entry) => (
+              {todayEntries.map((entry) => (
                   <li key={entry.id}>
                     <div>
                       <strong>{entry.course_name || entry.session_kind}</strong>
                       <small>{entry.location || "Location not recorded"}</small>
                     </div>
                     <span>
-                      {days[entry.day_of_week]} · {entry.start_time.slice(0, 5)}
+                      {entry.start_time.slice(0, 5)}
                       –{entry.end_time.slice(0, 5)}
                     </span>
                   </li>
                 ))}
             </ul>
-            {!data.timetable_entries.length && (
-              <p>No timetable entries recorded.</p>
+            {!todayEntries.length && (
+              <p>No scheduled classes today.</p>
             )}
           </Card>
           {(["academic_events", "personal_events"] as const).map((key) => (
@@ -762,8 +822,34 @@ function CalendarPage() {
               {!data[key].length && <p>No events recorded.</p>}
             </Card>
           ))}
-        </div>
-      )}
+          <Card title="Availability blocks">
+            <p className="muted">
+              Time protected from, or reserved for, study planning.
+            </p>
+            <ul className="rows">
+              {data.availability_blocks.map((block) => (
+                <li key={block.id}>
+                  <div>
+                    <strong>{block.label || "Unnamed availability block"}</strong>
+                    <small>{block.block_type}</small>
+                  </div>
+                  <span>
+                    {block.is_recurring && block.day_of_week !== null
+                      ? `Every ${days[block.day_of_week]}`
+                      : block.block_date || "Date not recorded"}
+                    {" · "}
+                    {block.start_time.slice(0, 5)}–{block.end_time.slice(0, 5)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {!data.availability_blocks.length && (
+              <p>No availability blocks recorded.</p>
+            )}
+          </Card>
+          </div>
+        );
+      }}
     </DataView>
   );
 }
@@ -772,7 +858,10 @@ function CalendarForms({ onSaved }: { onSaved: () => void }) {
   const [busy, setBusy] = useState(false);
   async function createEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    // `currentTarget` is cleared after an awaited browser event handler.
+    // Keep the form element before starting the asynchronous request.
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setBusy(true);
     setStatus(null);
     try {
@@ -783,7 +872,7 @@ function CalendarForms({ onSaved }: { onSaved: () => void }) {
         ends_at: new Date(String(form.get("ends_at"))).toISOString(),
         notes: form.get("notes") || null,
       });
-      event.currentTarget.reset();
+      formElement.reset();
       setStatus("Personal event added.");
       onSaved();
     } catch (error) {
@@ -796,7 +885,8 @@ function CalendarForms({ onSaved }: { onSaved: () => void }) {
   }
   async function createAvailability(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setBusy(true);
     setStatus(null);
     try {
@@ -808,8 +898,9 @@ function CalendarForms({ onSaved }: { onSaved: () => void }) {
         is_recurring: false,
         label: form.get("label") || null,
       });
-      event.currentTarget.reset();
+      formElement.reset();
       setStatus("Availability block added.");
+      onSaved();
     } catch (error) {
       setStatus(
         error instanceof Error ? error.message : "Could not add availability.",
@@ -1013,6 +1104,7 @@ function ReviewInboxPage() {
     "/ingestion?status=PREVIEW",
   );
   const [gmailQuery, setGmailQuery] = useState("");
+  const [gmailMaxResults, setGmailMaxResults] = useState(10);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
 
@@ -1021,7 +1113,7 @@ function ReviewInboxPage() {
     setImporting(true);
     setImportMessage(null);
     try {
-      const path = `/ingestion/gmail/import?max_results=10&query=${encodeURIComponent(gmailQuery)}`;
+      const path = `/ingestion/gmail/import?max_results=${gmailMaxResults}&query=${encodeURIComponent(gmailQuery)}`;
       const imported = await send<IngestionItem[]>(path, "POST", null);
       setImportMessage(
         `${imported.length} Gmail message${imported.length === 1 ? "" : "s"} checked. New items are review-only.`,
@@ -1054,6 +1146,17 @@ function ReviewInboxPage() {
               onChange={(event) => setGmailQuery(event.target.value)}
               placeholder="e.g. from:faculty@college.edu newer_than:30d"
             />
+          </label>
+          <label>
+            Messages
+            <select
+              value={gmailMaxResults}
+              onChange={(event) => setGmailMaxResults(Number(event.target.value))}
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={30}>30</option>
+            </select>
           </label>
           <button disabled={importing}>
             {importing ? "Reading Gmail…" : "Check Gmail"}
@@ -1114,16 +1217,26 @@ const starterQuestions = [
   "What are my biggest academic risks?",
 ];
 
-function AiChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+const initialChatMessages: ChatMessage[] = [
     {
       id: 0,
       role: "assistant",
       text: "Ask me about your attendance, assessments, preparation, risks, priorities, or study schedule. I use your CampusPulse data and deterministic backend tools to answer.",
     },
-  ]);
+  ];
+
+function AiChatPage({
+  messages,
+  setMessages,
+  busy,
+  setBusy,
+}: {
+  messages: ChatMessage[];
+  setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  busy: boolean;
+  setBusy: Dispatch<SetStateAction<boolean>>;
+}) {
   const [question, setQuestion] = useState("");
-  const [busy, setBusy] = useState(false);
 
   async function ask(rawQuestion?: string) {
     const text = (rawQuestion ?? question).trim();
@@ -1262,6 +1375,8 @@ function Placeholder({
 }
 
 export default function App() {
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialChatMessages);
+  const [chatBusy, setChatBusy] = useState(false);
   return (
     <div className="shell">
       <aside>
@@ -1322,7 +1437,17 @@ export default function App() {
           />
           <Route path="/announcements" element={<ReviewInboxPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
-          <Route path="/ai" element={<AiChatPage />} />
+          <Route
+            path="/ai"
+            element={
+              <AiChatPage
+                messages={chatMessages}
+                setMessages={setChatMessages}
+                busy={chatBusy}
+                setBusy={setChatBusy}
+              />
+            }
+          />
           <Route
             path="*"
             element={

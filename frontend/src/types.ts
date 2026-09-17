@@ -39,6 +39,7 @@ export interface CalendarEvent {
 export interface Calendar {
   academic_events: CalendarEvent[];
   personal_events: CalendarEvent[];
+  availability_blocks: Availability[];
   timetable_entries: {
     id: number;
     course_name: string | null;
@@ -132,6 +133,15 @@ export interface Dashboard {
     required_minutes: number;
     estimate_source: string;
     preparation_percentage: number | null;
+    factors: {
+      deadline_urgency: number;
+      assessment_importance: number;
+      preparation_gap: number;
+      performance_gap: number;
+      attendance_risk: number;
+      workload_risk: number;
+      conflict_risk: number;
+    };
   }[];
   risks: {
     risk_type: string;

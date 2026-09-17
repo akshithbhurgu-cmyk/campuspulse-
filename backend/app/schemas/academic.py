@@ -117,6 +117,7 @@ class CalendarOut(BaseModel):
     academic_events: list[AcademicCalendarEventOut]
     personal_events: list[PersonalEventOut]
     timetable_entries: list[TimetableEntryOut]
+    availability_blocks: list["AvailabilityBlockOut"]
 
 
 class PreparationCourseOut(BaseModel):

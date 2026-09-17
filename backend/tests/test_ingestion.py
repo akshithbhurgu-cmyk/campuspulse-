@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.models import AcademicCalendarEvent, Announcement, Assessment, Assignment, ChangeHistory, IngestionItem
 from app.ingestion.extractor import AcademicExtraction
-from app.ingestion.extractor import explicit_date
+from app.ingestion.extractor import explicit_date, explicit_event_type
 from app.seed import seed_synthetic_semester
 from app.services.ingestion import ingestion_service
 
@@ -69,6 +69,13 @@ class IngestionTests(unittest.TestCase):
     def test_only_unambiguous_written_dates_are_parsed(self):
         self.assertEqual(str(explicit_date("Test on 18 September 2026").date()), "2026-09-18")
         self.assertIsNone(explicit_date("Test on 18/09/26"))
+
+    def test_clear_holiday_notice_is_not_left_as_a_generic_announcement(self):
+        self.assertEqual(
+            explicit_event_type("The college will remain closed for an academic holiday on 21 October 2026."),
+            "HOLIDAY",
+        )
+        self.assertIsNone(explicit_event_type("DL assignment is due on 21 October 2026."))
 
     def test_gmail_preview_is_idempotent_by_external_id(self):
         first = ingestion_service.preview_text(
