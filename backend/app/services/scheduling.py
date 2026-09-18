@@ -28,6 +28,7 @@ class ScheduleContext:
     busy: list[TimeBlock]
     free_slots: list[TimeBlock]
     stored_sessions: list[StudySession]
+    locked_blocks: list[TimeBlock]
 
 
 class SchedulingService:
@@ -67,7 +68,7 @@ class SchedulingService:
                 busy.append(TimeBlock(
                     aware(event.starts_at, zone), aware(event.ends_at, zone), event.title
                 ))
-        classes, windows = [], []
+        classes, windows, locked_blocks = [], [], []
         day = start.date()
         while day <= end.date():
             day_start = datetime.combine(day, time.min, zone)
@@ -112,6 +113,8 @@ class SchedulingService:
                         windows.append(TimeBlock(max(start, begins), min(end, finishes)))
                 else:
                     busy.append(window)
+                    if block.block_type == AvailabilityBlockType.LOCKED:
+                        locked_blocks.append(window)
             day += timedelta(days=1)
 
         # Merge overlapping availability declarations to avoid double-counting capacity.
@@ -133,9 +136,9 @@ class SchedulingService:
             )
         ]
         return ScheduleContext(
-            sorted(classes, key=lambda item: item["starts_at"]), busy, free, list(stored)
+            sorted(classes, key=lambda item: item["starts_at"]), busy, free, list(stored),
+            locked_blocks,
         )
 
 
 scheduling_service = SchedulingService()
-

@@ -194,6 +194,16 @@ class DashboardService:
                 "starts_at": item.starts_at, "ends_at": item.ends_at,
                 "status": "PLANNED", "source": "preview",
             } for item in plan.sessions]
+        locked_today = [
+            {
+                "id": None, "title": item.label or "Locked study block",
+                "course_id": None, "topic_id": None,
+                "starts_at": item.starts_at, "ends_at": item.ends_at,
+                "status": "LOCKED", "is_locked": True, "source": "preview",
+            }
+            for item in schedule.locked_blocks
+            if item.starts_at.date() == now.date()
+        ]
         changes = session.scalars(
             select(ChangeHistory).where(ChangeHistory.student_id == student_id)
             .order_by(ChangeHistory.created_at.desc(), ChangeHistory.id.desc()).limit(10)
@@ -201,7 +211,7 @@ class DashboardService:
         return {
             "student_id": student_id, "generated_at": now, "timezone": timezone,
             "next_class": schedule.classes[0] if schedule.classes else None,
-            "today_plan": sorted(today_plan, key=lambda item: item["starts_at"]),
+            "today_plan": sorted([*today_plan, *locked_today], key=lambda item: item["starts_at"]),
             "plan_source": plan_source,
             "top_priorities": sorted(priorities, key=lambda item: (-item["score"], item["task_key"]))[:5],
             "risks": sorted(risks, key=lambda item: (-item["score"], item["summary"]))[:15],

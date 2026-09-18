@@ -8,7 +8,7 @@ const baseUrl = (import.meta.env.VITE_API_BASE_URL || "/api").replace(
 export async function get<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(
     `${baseUrl}${path}${path.includes("?") ? "&" : "?"}student_id=1`,
-    { signal },
+    { signal, cache: "no-store" },
   );
   if (!response.ok) {
     const body = await response.json().catch(() => null);

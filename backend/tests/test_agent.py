@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.agent.orchestrator import AgentExecutionError, CampusPulseAgent, OllamaUnavailableError
+from app.agent.orchestrator import CampusPulseAgent, OllamaUnavailableError
 from app.db.base import Base
 from app.seed import seed_synthetic_semester
 
@@ -94,9 +94,11 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(ToolCallingModel.last_instance.kwargs["client_kwargs"], {"timeout": 17})
 
     @patch("app.agent.orchestrator.ChatOllama", LoopingToolCallingModel)
-    def test_repeated_tool_calls_stop_with_a_controlled_error(self):
-        with self.assertRaises(AgentExecutionError):
-            self.agent().ask("Keep checking attendance forever")
+    def test_repeated_tool_calls_use_deterministic_fallback(self):
+        result = self.agent().ask("Keep checking attendance forever")
+        self.assertTrue(result["answer"].strip())
+        self.assertIn("CampusPulse data", result["answer"])
+        self.assertEqual(result["tools_used"], ["get_dashboard"])
 
     @patch("app.agent.orchestrator.ChatOllama", EmptyFinalModel)
     def test_empty_final_model_response_uses_a_tool_grounded_fallback(self):

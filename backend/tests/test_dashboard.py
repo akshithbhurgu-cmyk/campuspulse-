@@ -157,6 +157,19 @@ class DashboardTests(unittest.TestCase):
         self.assertTrue(any(r["risk_type"] == "WORKLOAD" and r["score"] == 100
                             for r in result["risks"]))
 
+    def test_locked_availability_is_visible_in_today_plan(self):
+        self.db.add(AvailabilityBlock(
+            student_id=1, block_type=AvailabilityBlockType.LOCKED,
+            block_date=date(2026, 9, 16), start_time=time(19), end_time=time(20),
+            label="Library lock",
+        ))
+        self.db.commit()
+        result = self.dashboard()
+        locked = [item for item in result["today_plan"] if item["status"] == "LOCKED"]
+        self.assertEqual(len(locked), 1)
+        self.assertEqual(locked[0]["title"], "Library lock")
+        self.assertTrue(locked[0]["is_locked"])
+
     def test_overlapping_windows_do_not_double_book(self):
         self.db.add(AvailabilityBlock(
             student_id=1, block_type=AvailabilityBlockType.AVAILABLE,

@@ -1000,6 +1000,9 @@ function ReviewItem({
   const [busy, setBusy] = useState<"apply" | "ignore" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const extraction = item.extraction;
+  const showConfidence =
+    extraction?.event_type !== "ANNOUNCEMENT" &&
+    typeof extraction?.confidence === "number";
 
   async function act(action: "apply" | "ignore") {
     setBusy(action);
@@ -1056,14 +1059,12 @@ function ReviewItem({
           <dt>Scheduled</dt>
           <dd>{stamp(extraction?.scheduled_at || null)}</dd>
         </div>
-        <div>
-          <dt>Confidence</dt>
-          <dd>
-            {typeof extraction?.confidence === "number"
-              ? `${Math.round(extraction.confidence * 100)}%`
-              : "Not available"}
-          </dd>
-        </div>
+        {showConfidence && (
+          <div>
+            <dt>Confidence</dt>
+            <dd>{`${Math.round(extraction.confidence! * 100)}%`}</dd>
+          </div>
+        )}
       </dl>
       {extraction?.summary && <p>{extraction.summary}</p>}
       {!!extraction?.topics?.length && (
@@ -1325,6 +1326,12 @@ function AiChatPage({
             id="agent-question"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                event.preventDefault();
+                void ask();
+              }
+            }}
             maxLength={2000}
             rows={3}
             placeholder="Ask about your semester…"

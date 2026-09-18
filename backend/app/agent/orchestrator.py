@@ -78,9 +78,11 @@ class CampusPulseAgent:
                 {"recursion_limit": 12},
             )
         except GraphRecursionError as error:
-            raise AgentExecutionError(
-                "The local model exceeded the tool-call limit for this request."
-            ) from error
+            return {
+                "answer": self._tool_grounded_fallback(student_id, ["get_dashboard"]),
+                "tools_used": ["get_dashboard"],
+                "model": self.model,
+            }
         except Exception as error:
             raise OllamaUnavailableError("The local Ollama model could not be reached or complete this request.") from error
         messages = result["messages"]
