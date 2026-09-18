@@ -23,7 +23,7 @@ export async function get<T>(path: string, signal: AbortSignal): Promise<T> {
 
 export async function send<T>(
   path: string,
-  method: "POST" | "PATCH",
+  method: "POST" | "PATCH" | "DELETE",
   payload: unknown,
 ): Promise<T> {
   const response = await fetch(
@@ -31,7 +31,7 @@ export async function send<T>(
     {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: method === "DELETE" ? undefined : JSON.stringify(payload),
     },
   );
   if (!response.ok) {

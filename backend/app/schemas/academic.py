@@ -106,6 +106,7 @@ class TimetableEntryOut(BaseModel):
     course_id: int | None
     course_code: str | None
     course_name: str | None
+    title: str | None
     day_of_week: int
     start_time: time
     end_time: time

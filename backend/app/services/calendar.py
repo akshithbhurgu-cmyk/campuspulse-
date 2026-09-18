@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.db.models import (
     AcademicCalendarEvent,
     AvailabilityBlock,
+    ChangeHistory,
     PersonalEvent,
     Semester,
     TimetableEntry,
@@ -69,6 +70,7 @@ class CalendarService:
                     "course_id": entry.course_id,
                     "course_code": entry.course.code if entry.course else None,
                     "course_name": entry.course.name if entry.course else None,
+                    "title": entry.title,
                     "day_of_week": entry.day_of_week,
                     "start_time": entry.start_time,
                     "end_time": entry.end_time,
@@ -125,6 +127,34 @@ class CalendarService:
         session.commit()
         session.refresh(block)
         return block
+
+    def delete_availability_block(
+        self, session: Session, student_id: int, block_id: int
+    ) -> dict:
+        block = session.scalar(select(AvailabilityBlock).where(
+            AvailabilityBlock.id == block_id,
+            AvailabilityBlock.student_id == student_id,
+        ))
+        if block is None:
+            raise LookupError("Availability block was not found.")
+        before = {
+            "label": block.label,
+            "block_type": block.block_type.value,
+            "block_date": block.block_date.isoformat() if block.block_date else None,
+            "start_time": block.start_time.isoformat(),
+            "end_time": block.end_time.isoformat(),
+        }
+        session.add(ChangeHistory(
+            student_id=student_id,
+            entity_type="AVAILABILITY_BLOCK",
+            entity_id=str(block.id),
+            action="AVAILABILITY_DELETED",
+            before_state=before,
+            after_state=None,
+        ))
+        session.delete(block)
+        session.commit()
+        return {"deleted_id": block_id}
 
 
 calendar_service = CalendarService()

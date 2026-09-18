@@ -249,33 +249,96 @@ small {
 .plan-sessions {
   list-style: none;
   padding: 0;
-  margin: 14px 0 0;
+  margin: 16px 0 0;
   display: grid;
-  gap: 10px;
+  gap: 8px;
+}
+.plan-card {
+  padding: 22px;
+  overflow: hidden;
+}
+.plan-card h2 {
+  margin-bottom: 14px;
+}
+.plan-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #dce7d7;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f6f9f1, #edf5eb);
+}
+.plan-overview p {
+  margin: 5px 0 0;
+  color: #38584b;
+  font-size: 13px;
+  font-weight: 650;
+}
+.plan-source,
+.plan-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
+}
+.plan-source {
+  color: #33664f;
+  background: #e0f1e2;
+}
+.plan-source.preview {
+  color: #786226;
+  background: #fcf3d7;
+}
+.plan-overview-hint {
+  color: #6a7e70;
+  font-size: 11px;
+  text-align: right;
 }
 .plan-session {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
   gap: 12px;
-  align-items: start;
-  padding: 14px;
+  align-items: center;
+  padding: 12px;
   border: 1px solid #e1e8dc;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #fcfdf9, #f3f7ee);
+  border-radius: 12px;
+  background: #fffefb;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.plan-session:hover {
+  border-color: #c9dccb;
+  box-shadow: 0 4px 12px #173f3608;
 }
 .plan-session-main {
   display: grid;
-  gap: 5px;
+  gap: 3px;
   min-width: 0;
 }
 .plan-session-main strong {
   color: #23443a;
-  font-size: 15px;
+  font-size: 14px;
 }
 .plan-session-time {
-  color: #668070;
-  font-weight: 650;
-  margin: 0;
+  display: grid;
+  gap: 1px;
+  padding-right: 10px;
+  border-right: 1px solid #e3eadf;
+  color: #294d40;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.plan-session-time strong {
+  font-size: 13px;
+}
+.plan-session-time span {
+  color: #718377;
 }
 .plan-session-actions,
 .plan-editor-actions {
@@ -285,15 +348,25 @@ small {
   gap: 8px;
   flex-wrap: wrap;
 }
+.plan-status {
+  color: #557159;
+  background: #edf3e9;
+}
+.plan-status.locked {
+  color: #805126;
+  background: #fff0dd;
+}
 .plan-editor {
   grid-column: 1 / -1;
-  border-top: 1px solid #dfe7da;
-  padding-top: 14px;
+  margin-top: 2px;
+  border-top: 1px solid #e3eadf;
+  padding: 14px 0 2px 84px;
   min-width: 0;
 }
 .plan-editor-form {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(160px, 1.6fr) minmax(145px, 1fr) minmax(145px, 1fr) auto;
+  align-items: end;
   gap: 12px;
 }
 .plan-editor-form label {
@@ -312,6 +385,13 @@ small {
 .plan-editor-actions {
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+.plan-save-button {
+  margin-top: 16px;
+  width: 100%;
+}
+.plan-page-card {
+  max-width: 920px;
 }
 .priority-list,
 .risk-list {
@@ -502,6 +582,15 @@ pre {
   background: #e8eee6;
   color: #29463b;
   border: 1px solid #cbd7ca;
+}
+.danger-button {
+  color: #a53030;
+  background: #fff5f3;
+  border-color: #efceca;
+}
+.danger-button:not(:disabled):hover {
+  background: #fee7e2;
+  box-shadow: 0 4px 12px #a5303017;
 }
 .chat-layout {
   display: grid;
@@ -735,12 +824,30 @@ footer {
   }
   .plan-session {
     grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .plan-session-time {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0;
+    border-right: 0;
   }
   .plan-session-actions,
   .plan-editor-actions {
     justify-content: flex-start;
   }
+  .plan-editor {
+    padding-left: 0;
+  }
   .plan-editor-form {
     grid-template-columns: 1fr;
+  }
+  .plan-overview {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .plan-overview-hint {
+    text-align: left;
   }
 }

@@ -43,6 +43,7 @@ export interface Calendar {
   timetable_entries: {
     id: number;
     course_name: string | null;
+    title: string | null;
     day_of_week: number;
     start_time: string;
     end_time: string;
@@ -122,6 +123,7 @@ export interface Dashboard {
     status: string;
     is_locked: boolean;
     source: "saved" | "preview";
+    management_kind: "study_session" | "availability_block" | "preview";
   }[];
   plan_source: "saved" | "preview";
   top_priorities: {

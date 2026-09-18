@@ -60,6 +60,31 @@ class UnavailableModel(ToolCallingModel):
         raise ConnectionError("Ollama is offline")
 
 
+class EmptyThenWriterModel(ToolCallingModel):
+    instances = 0
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.instance_number = type(self).instances
+        type(self).instances += 1
+        self.bound = False
+
+    def bind_tools(self, tools):
+        self.bound = True
+        return self
+
+    def invoke(self, messages):
+        self.calls += 1
+        if self.bound and self.calls == 1:
+            return AIMessage(
+                content="",
+                tool_calls=[{"name": "get_dashboard", "args": {}, "id": "dashboard-1"}],
+            )
+        if self.bound:
+            return AIMessage(content="")
+        return AIMessage(content="FOS attendance needs attention, so attend the next classes.")
+
+
 class AgentTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine(
@@ -105,6 +130,13 @@ class AgentTests(unittest.TestCase):
         result = self.agent().ask("What are my biggest academic risks?")
         self.assertIn("highest current risks", result["answer"])
         self.assertTrue(result["answer"].strip())
+        self.assertEqual(result["tools_used"], ["get_dashboard"])
+
+    @patch("app.agent.orchestrator.ChatOllama", EmptyThenWriterModel)
+    def test_empty_final_model_uses_tool_free_writer_before_fallback(self):
+        EmptyThenWriterModel.instances = 0
+        result = self.agent().ask("What should I focus on?")
+        self.assertIn("FOS attendance needs attention", result["answer"])
         self.assertEqual(result["tools_used"], ["get_dashboard"])
 
     @patch("app.agent.orchestrator.ChatOllama", UnavailableModel)

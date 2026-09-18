@@ -168,7 +168,7 @@ class DashboardService:
                 "id": item.id, "title": item.title, "course_id": item.course_id,
                 "topic_id": item.topic_id, "starts_at": aware(item.starts_at, zone),
                 "ends_at": aware(item.ends_at, zone), "status": item.status.value,
-                "is_locked": item.is_locked, "source": "saved",
+                "is_locked": item.is_locked, "source": "saved", "management_kind": "study_session",
             } for item in saved]
             for item in saved:
                 if item.status.value != "PLANNED":
@@ -192,14 +192,15 @@ class DashboardService:
             today_plan = [{
                 "title": item.title, "course_id": item.course_id, "topic_id": item.topic_id,
                 "starts_at": item.starts_at, "ends_at": item.ends_at,
-                "status": "PLANNED", "source": "preview",
+                "status": "PLANNED", "source": "preview", "management_kind": "preview",
             } for item in plan.sessions]
         locked_today = [
             {
-                "id": None, "title": item.label or "Locked study block",
+                "id": item.source_id, "title": item.label or "Locked study block",
                 "course_id": None, "topic_id": None,
                 "starts_at": item.starts_at, "ends_at": item.ends_at,
                 "status": "LOCKED", "is_locked": True, "source": "preview",
+                "management_kind": "availability_block",
             }
             for item in schedule.locked_blocks
             if item.starts_at.date() == now.date()

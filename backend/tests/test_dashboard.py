@@ -16,7 +16,7 @@ from app.api.deps import get_db
 from app.db.base import Base
 from app.db.models import (
     AcademicCalendarEvent, Assessment, Assignment, AvailabilityBlock, ChangeHistory,
-    Course, PersonalEvent, Semester, Student, StudyPlan, StudyProgress, StudySession,
+    Course, PersonalEvent, Semester, Student, StudyPlan, StudyProgress, StudySession, TimetableEntry,
 )
 from app.db.models.enums import (
     AvailabilityBlockType, CalendarEventType, StudyPlanStatus, StudySessionStatus,
@@ -27,6 +27,7 @@ from app.main import app
 from app.schemas.dashboard import DashboardOut
 from app.seed import seed_synthetic_semester
 from app.services.dashboard import dashboard_service
+from app.services.plans import plan_service
 
 NOW = datetime(2026, 9, 16, 0, tzinfo=UTC)
 ZONE = ZoneInfo("Asia/Kolkata")
@@ -79,7 +80,7 @@ class DashboardTests(unittest.TestCase):
         }
         before = counts()
         result = self.dashboard()
-        self.assertEqual(result["next_class"]["course_name"], "Full Stack Development using Java")
+        self.assertEqual(result["next_class"]["course_name"], "Essentials of Web Programming")
         self.assertEqual(result["plan_source"], "preview")
         self.assertTrue(result["today_plan"])
         self.assertEqual(len(result["top_priorities"]), 5)
@@ -109,6 +110,39 @@ class DashboardTests(unittest.TestCase):
                        if p["task_key"] == f"assessment:{slip.id}")
         self.assertEqual(changed["required_minutes"], 0)
         self.assertLess(changed["score"], item["score"])
+
+    def test_real_friday_periods_run_through_1605(self):
+        friday = self.dashboard(now=datetime(2026, 9, 18, 0, tzinfo=UTC))
+        self.assertEqual(friday["next_class"]["course_name"], "Foundations of Operating Systems")
+        entries = self.db.scalars(select(StudySession)).all()
+        self.assertEqual(entries, [])
+        timetable = self.db.scalars(select(TimetableEntry).where(
+            TimetableEntry.day_of_week == 4
+        ).order_by(TimetableEntry.start_time)).all()
+        self.assertEqual(len(timetable), 7)
+        self.assertEqual(timetable[-1].end_time, time(16, 5))
+
+    def test_saved_session_can_be_edited_and_deleted(self):
+        plan = StudyPlan(student_id=1, plan_date=date(2026, 9, 16))
+        session_item = StudySession(
+            title="Deep Learning revision",
+            starts_at=datetime(2026, 9, 16, 14, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 16, 15, tzinfo=UTC),
+        )
+        plan.sessions.append(session_item)
+        self.db.add(plan)
+        self.db.commit()
+        updated = plan_service.update_session(
+            self.db, 1, session_item.id, title="DL revision",
+            starts_at=datetime(2026, 9, 16, 15, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 16, 16, tzinfo=UTC), timezone="Asia/Kolkata",
+        )
+        self.assertEqual(updated["title"], "DL revision")
+        self.assertEqual(plan_service.delete_session(self.db, 1, session_item.id), {"deleted_id": session_item.id})
+        self.assertIsNone(self.db.get(StudySession, session_item.id))
+        self.assertTrue(self.db.scalar(select(ChangeHistory).where(
+            ChangeHistory.action == "SESSION_DELETED"
+        )))
 
     def test_saved_locked_plan_and_real_history(self):
         plan = StudyPlan(student_id=1, plan_date=date(2026, 9, 16),

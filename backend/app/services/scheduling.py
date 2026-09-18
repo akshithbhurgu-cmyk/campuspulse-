@@ -94,7 +94,7 @@ class SchedulingService:
                     classes.append({
                         "timetable_entry_id": entry.id,
                         "course_id": entry.course_id,
-                        "course_name": entry.course.name if entry.course else None,
+                        "course_name": entry.title or (entry.course.name if entry.course else None),
                         "starts_at": begins, "ends_at": finishes,
                         "session_kind": entry.session_kind.value, "location": entry.location,
                     })
@@ -107,7 +107,9 @@ class SchedulingService:
                     continue
                 begins = datetime.combine(day, block.start_time, zone)
                 finishes = datetime.combine(day, block.end_time, zone)
-                window = TimeBlock(begins, finishes, block.label or "Availability")
+                window = TimeBlock(
+                    begins, finishes, block.label or "Availability", source_id=block.id
+                )
                 if block.block_type == AvailabilityBlockType.AVAILABLE:
                     if begins < end and finishes > start:
                         windows.append(TimeBlock(max(start, begins), min(end, finishes)))

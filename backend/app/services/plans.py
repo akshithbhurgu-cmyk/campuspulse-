@@ -62,4 +62,30 @@ class PlanService:
         ))
         session.commit()
         return {"id": item.id, "title": item.title, "starts_at": item.starts_at, "ends_at": item.ends_at}
+
+    def delete_session(self, session: Session, student_id: int, session_id: int) -> dict:
+        item = session.query(StudySession).join(StudyPlan).filter(
+            StudySession.id == session_id,
+            StudyPlan.student_id == student_id,
+            StudyPlan.status != StudyPlanStatus.ARCHIVED,
+        ).one_or_none()
+        if item is None:
+            raise LookupError("Study session was not found.")
+        before = {
+            "title": item.title,
+            "starts_at": item.starts_at.isoformat(),
+            "ends_at": item.ends_at.isoformat(),
+            "is_locked": item.is_locked,
+        }
+        session.add(ChangeHistory(
+            student_id=student_id,
+            entity_type="STUDY_SESSION",
+            entity_id=str(item.id),
+            action="SESSION_DELETED",
+            before_state=before,
+            after_state=None,
+        ))
+        session.delete(item)
+        session.commit()
+        return {"deleted_id": session_id}
 plan_service = PlanService()

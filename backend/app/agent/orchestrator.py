@@ -28,6 +28,11 @@ Tool-use rules:
 - If a named course is not present in tool results, say that it was not found instead of
   inventing a record."""
 
+WRITER_PROMPT = """You are CampusPulse's final answer writer. Answer the student's
+question using only the verified CampusPulse data supplied below. Do not call tools,
+do not mention tool calling or model failures, and do not invent facts. Give a direct,
+clear answer in a short paragraph or bullets."""
+
 
 class OllamaUnavailableError(RuntimeError):
     pass
@@ -78,8 +83,9 @@ class CampusPulseAgent:
                 {"recursion_limit": 12},
             )
         except GraphRecursionError as error:
+            written = self._write_from_verified_data(question, student_id, [])
             return {
-                "answer": self._tool_grounded_fallback(student_id, ["get_dashboard"]),
+                "answer": written or self._tool_grounded_fallback(student_id, ["get_dashboard"]),
                 "tools_used": ["get_dashboard"],
                 "model": self.model,
             }
@@ -95,8 +101,11 @@ class CampusPulseAgent:
             "",
         )
         # Some local models correctly call a tool but occasionally emit an empty
-        # final message. Never render a blank answer after successfully fetching
-        # the student's data; return a deterministic, tool-grounded summary.
+        # final message. Use a separate, tool-free writer pass before falling back
+        # to a deterministic explanation. This prevents a 4B model from entering
+        # another tool-call loop when all facts have already been retrieved.
+        if not content:
+            content = self._write_from_verified_data(question, student_id, messages)
         if not content:
             content = self._tool_grounded_fallback(student_id, used)
         return {"answer": content, "tools_used": used, "model": self.model}
@@ -113,6 +122,41 @@ class CampusPulseAgent:
             ).strip()
         return str(content).strip()
 
+    def _write_from_verified_data(
+        self, question: str, student_id: int, messages: list[Any]
+    ) -> str:
+        """Ask an unbound local model to turn completed tool data into prose."""
+        tool_output = "\n\n".join(
+            self._message_text(item)
+            for item in messages
+            if getattr(item, "type", "") == "tool" and self._message_text(item)
+        )
+        if not tool_output:
+            dashboard = dashboard_service.get_dashboard(
+                self.session, student_id, timezone=self.timezone
+            )
+            tool_output = (
+                f"Top priorities: {dashboard['top_priorities'][:3]}\n"
+                f"Risks: {dashboard['risks'][:5]}"
+            )
+        writer = ChatOllama(
+            model=self.model,
+            base_url=self.base_url,
+            temperature=0,
+            client_kwargs={"timeout": self.timeout_seconds},
+        )
+        try:
+            response = writer.invoke([
+                SystemMessage(content=WRITER_PROMPT),
+                HumanMessage(content=(
+                    f"Student question: {question}\n\n"
+                    f"Verified CampusPulse data:\n{tool_output[:12000]}"
+                )),
+            ])
+            return self._message_text(response)
+        except Exception:
+            return ""
+
     def _tool_grounded_fallback(self, student_id: int, used_tools: list[str]) -> str:
         dashboard = dashboard_service.get_dashboard(
             self.session, student_id, timezone=self.timezone
@@ -120,7 +164,7 @@ class CampusPulseAgent:
         risks = dashboard["risks"][:3]
         priorities = dashboard["top_priorities"][:2]
         lines = [
-            "I retrieved your CampusPulse data, but the local model did not finish its written explanation.",
+            "I checked your current CampusPulse data. Here is the verified summary:",
         ]
         if risks:
             lines.append("Your highest current risks are:")

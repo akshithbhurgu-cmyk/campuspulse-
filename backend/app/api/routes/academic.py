@@ -167,3 +167,13 @@ def create_availability_block(
         not_found(error)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
+
+
+@router.delete("/availability/{block_id}")
+def delete_availability_block(
+    block_id: int, db: DatabaseSession, student_id: StudentId = 1
+) -> dict:
+    try:
+        return calendar_service.delete_availability_block(db, student_id, block_id)
+    except LookupError as error:
+        not_found(error)

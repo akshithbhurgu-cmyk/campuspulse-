@@ -10,6 +10,7 @@ class TimeBlock:
     ends_at: datetime
     label: str = ""
     locked: bool = False
+    source_id: int | None = None
 
     def __post_init__(self) -> None:
         if self.ends_at <= self.starts_at:
@@ -21,4 +22,3 @@ class TimeBlock:
 
     def overlaps(self, other: TimeBlock) -> bool:
         return self.starts_at < other.ends_at and other.starts_at < self.ends_at
-

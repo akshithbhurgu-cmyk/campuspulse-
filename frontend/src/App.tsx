@@ -45,9 +45,17 @@ const pages = [
   ["/ai", "✧  CampusPulse AI"],
 ];
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+function Card({
+  title,
+  children,
+  className = "",
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <section className="card">
+    <section className={`card ${className}`}>
       <h2>{title}</h2>
       {children}
     </section>
@@ -279,9 +287,36 @@ function PlanContent({
   }
   async function toggle(id: number, locked: boolean) {
     setBusy(true);
+    setMessage(null);
     try {
       await send(`/study-sessions/${id}/lock?locked=${!locked}`, "POST", null);
       refresh?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update this session.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(session: Dashboard["today_plan"][number]) {
+    if (!session.id) return;
+    const protectedBlock = session.management_kind === "availability_block";
+    const prompt = protectedBlock
+      ? `Remove the protected block “${session.title}”? This will make that time available to planning again.`
+      : `Remove “${session.title}” from today’s study plan?`;
+    if (!window.confirm(prompt)) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await send(
+        protectedBlock ? `/availability/${session.id}` : `/study-sessions/${session.id}`,
+        "DELETE",
+        null,
+      );
+      if (editingId === session.id) setEditingId(null);
+      setMessage(protectedBlock ? "Protected availability block removed." : "Study session removed from today’s plan.");
+      refresh?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove this session.");
     } finally {
       setBusy(false);
     }
@@ -316,33 +351,55 @@ function PlanContent({
   }
   return (
     <>
-      <p className="notice">
-        {data.plan_source === "preview"
-          ? "Planning preview — not saved. No database changes are made by this screen."
-          : "Saved plan — displayed without modifying sessions."}
-      </p>
+      <div className="plan-overview">
+        <div>
+          <span className={`plan-source ${data.plan_source}`}>
+            {data.plan_source === "preview" ? "Draft plan" : "Saved plan"}
+          </span>
+          <p>
+            {data.today_plan.length
+              ? `${data.today_plan.length} block${data.today_plan.length === 1 ? "" : "s"} scheduled for today`
+              : "Your day is currently open"}
+          </p>
+        </div>
+        {data.plan_source === "saved" && (
+          <span className="plan-overview-hint">Edit or lock a session below</span>
+        )}
+      </div>
+      {data.plan_source === "preview" && (
+        <p className="notice">
+          This is a planning preview. Save it when the suggested time blocks look right.
+        </p>
+      )}
       <ul className="plan-sessions">
         {data.today_plan.map((session, index) => (
           <li className="plan-session" key={session.id ?? `${session.starts_at}-${index}`}>
+            <div className="plan-session-time">
+              <strong>{new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: data.timezone }).format(new Date(session.starts_at))}</strong>
+              <span>{new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: data.timezone }).format(new Date(session.ends_at))}</span>
+            </div>
             <div className="plan-session-main">
-              <small className="plan-session-time">
-                {stamp(session.starts_at, data.timezone)} → {stamp(session.ends_at, data.timezone)}
-              </small>
               <strong>{session.title}</strong>
+              <small>
+                {session.is_locked
+                  ? "Protected time — CampusPulse will not move it automatically."
+                  : session.source === "preview"
+                    ? "Suggested from your priorities and available time."
+                    : "Scheduled study session."}
+              </small>
             </div>
             <div className="plan-session-actions">
-              <span className="badge">
-                {session.is_locked ? "Locked · " : ""}
-                {session.status}
+              <span className={`plan-status ${session.is_locked ? "locked" : ""}`}>
+                {session.is_locked ? "Locked" : session.status}
               </span>
-              {session.id && data.plan_source === "saved" && (
+              {session.id && session.management_kind === "study_session" && data.plan_source === "saved" && (
                 <>
                   <button
                     className="small-button"
                     disabled={busy}
                     onClick={() => toggle(session.id!, session.is_locked)}
                   >
-                    {session.is_locked ? "Unlock" : "Lock"}
+                    {session.is_locked ? "Unlock" : "Lock time"}
                   </button>
                   <button
                     className="small-button secondary-button"
@@ -351,7 +408,25 @@ function PlanContent({
                   >
                     Edit
                   </button>
+                  <button
+                    type="button"
+                    className="small-button danger-button"
+                    disabled={busy}
+                    onClick={() => remove(session)}
+                  >
+                    Delete
+                  </button>
                 </>
+              )}
+              {session.id && session.management_kind === "availability_block" && (
+                <button
+                  type="button"
+                  className="small-button danger-button"
+                  disabled={busy}
+                  onClick={() => remove(session)}
+                >
+                  Remove block
+                </button>
               )}
             </div>
             {editingId === session.id && (
@@ -370,8 +445,18 @@ function PlanContent({
                     <input value={editEndsAt} onChange={(event) => setEditEndsAt(event.target.value)} required type="datetime-local" />
                   </label>
                   <div className="plan-editor-actions">
-                    <button disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
-                    <button type="button" className="secondary-button" disabled={busy} onClick={() => setEditingId(null)}>Cancel</button>
+                    <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={busy}
+                      onClick={() => {
+                        setEditingId(null);
+                        setMessage(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </form>
               </div>
@@ -380,7 +465,7 @@ function PlanContent({
         ))}
       </ul>
       {data.plan_source === "preview" && data.today_plan.length > 0 && (
-        <button disabled={busy} onClick={save}>
+        <button className="plan-save-button" disabled={busy} onClick={save}>
           {busy ? "Saving…" : "Save today’s plan"}
         </button>
       )}
@@ -592,7 +677,7 @@ function DashboardPage() {
                 <p>No upcoming class in the next 14 days.</p>
               )}
             </Card>
-            <Card title="Today’s study plan">
+            <Card title="Today’s study plan" className="plan-card">
               <PlanContent data={data} refresh={refresh} />
             </Card>
             <Card title="Top priorities">
@@ -1431,7 +1516,7 @@ export default function App() {
               <DataView<Dashboard> path="/dashboard">
                 {(data, refresh) => (
                   <div className="stack">
-                    <Card title="Today’s plan">
+                    <Card title="Today’s plan" className="plan-card plan-page-card">
                       <PlanContent data={data} refresh={refresh} />
                     </Card>
                     {data.plan_source === "saved" && (

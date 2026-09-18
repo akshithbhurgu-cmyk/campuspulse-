@@ -64,6 +64,18 @@ def update_session(
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
+
+@router.delete("/study-sessions/{session_id}")
+def delete_session(
+    session_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    student_id: Annotated[int, Query(ge=1)] = 1,
+) -> dict:
+    try:
+        return plan_service.delete_session(db, student_id, session_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
 @router.post("/plans/replan/preview")
 def replan_preview(starts_at: datetime, ends_at: datetime, db: Annotated[Session, Depends(get_db)], student_id: Annotated[int, Query(ge=1)] = 1) -> dict:
     if ends_at <= starts_at: raise HTTPException(status_code=422, detail="End must be after start.")

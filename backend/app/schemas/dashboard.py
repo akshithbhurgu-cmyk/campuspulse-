@@ -24,6 +24,7 @@ class DashboardSessionOut(BaseModel):
     status: str
     is_locked: bool = False
     source: Literal["saved", "preview"]
+    management_kind: Literal["study_session", "availability_block", "preview"]
 
 
 class DashboardPriorityOut(BaseModel):
